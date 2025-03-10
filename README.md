@@ -85,7 +85,58 @@ cqlsh:movielens_userratings> SELECT * FROM user LIMIT 5;
 
 (5 rows)
 ```
-**2. Get users between 18 and 26**
+
+**2. Get the average rating given by a specific user.**
+```
+cqlsh:movielens_userratings> SELECT AVG(rating) FROM ratings WHERE user_id = 1200;
+
+ system.avg(rating)
+--------------------
+                  3
+
+(1 rows)
+```
+
+**3. Get the number of ratings made by a specific user**
+```
+cqlsh:movielens_userratings> SELECT COUNT(*) FROM ratings WHERE user_id = 12;
+
+ count
+-------
+    23
+
+(1 rows)
+```
+
+### Complex Queries
+**1. Get every movie a specific user has given a rating of 5.**
+```
+cqlsh:movielens_userratings> SELECT movie_id, rating FROM ratings WHERE user_id = 1 AND rating = 5 ALLOW FILTERING;
+
+ movie_id | rating
+----------+--------
+        1 |      5
+       48 |      5
+      150 |      5
+      527 |      5
+      595 |      5
+     1022 |      5
+     1028 |      5
+     1029 |      5
+     1035 |      5
+     1193 |      5
+     1270 |      5
+     1287 |      5
+     1836 |      5
+     1961 |      5
+     2028 |      5
+     2355 |      5
+     2804 |      5
+     3105 |      5
+
+(18 rows) 
+```
+**2. Get users between 18 and 26 of age**
 ```
 cqlsh:movielens_userratings> SELECT user_id, name, age FROM user WHERE age >= 18 AND age <= 26 LIMIT 20 ALLOW FILTERING;
 
@@ -114,50 +165,99 @@ cqlsh:movielens_userratings> SELECT user_id, name, age FROM user WHERE age >= 18
 
 (20 rows)
 ```
-**3. Get the average rating given by a specific user.**
+**3. Get the movie_id and the average rating of a specific movie**
 ```
-cqlsh:movielens_userratings> SELECT AVG(rating) FROM ratings WHERE user_id = 1200;
+cqlsh:movielens_userratings> SELECT movie_id, AVG(rating) FROM ratings WHERE movie_id = 20 ALLOW FILTERING;
 
- system.avg(rating)
---------------------
-                  3
-
-(1 rows)
-```
-**4. Get every movie a specific user has given a rating of 5.**
-```
-cqlsh:movielens_userratings> SELECT movie_id, rating FROM ratings WHERE user_id = 1 AND rating = 5 ALLOW FILTERING;
-
- movie_id | rating
-----------+--------
-        1 |      5
-       48 |      5
-      150 |      5
-      527 |      5
-      595 |      5
-     1022 |      5
-     1028 |      5
-     1029 |      5
-     1035 |      5
-     1193 |      5
-     1270 |      5
-     1287 |      5
-     1836 |      5
-     1961 |      5
-     2028 |      5
-     2355 |      5
-     2804 |      5
-     3105 |      5
-
-(18 rows) 
-```
-**6. Get the number of ratings made by a specific user**
-```
-cqlsh:movielens_userratings> SELECT COUNT(*) FROM ratings WHERE user_id = 12;
-
- count
--------
-    23
+ movie_id | system.avg(rating)
+----------+--------------------
+       20 |                  2
 
 (1 rows)
+
+Warnings :
+Aggregation query used without partition key
 ```
+**4. Get all unemployed users**
+```
+cqlsh:movielens_userratings> SELECT * FROM user WHERE occupation = 'unemployed' LIMIT 15 ALLOW FILTERING;
+
+ user_id | age | gender | name            | occupation
+---------+-----+--------+-----------------+------------
+    1584 |  25 |      M |     Bud Shannon | unemployed
+    1902 |  31 |      M |  Carlton Delmar | unemployed
+    5420 |   2 |      F |    Yaeko Brooks | unemployed
+    1303 |  28 |      M |     Leland Glen | unemployed
+    1933 |  23 |      M |    Major Jordon | unemployed
+    2160 |  20 |      F |  Tania Porfirio | unemployed
+     465 |  24 |      M |      Jim Hassan | unemployed
+    3328 |  70 |      M |        Jeff Pat | unemployed
+    1699 |  34 |      F | Celinda Stanton | unemployed
+    4227 |  28 |      M |     Ahmad Homer | unemployed
+    2712 |  21 |      F |   Jestine Isaac | unemployed
+    1636 |  31 |      F |   Karrie Vernon | unemployed
+    2993 |  18 |      M |    Josef Jeramy | unemployed
+    2805 |  62 |      M |    Reuben Tyron | unemployed
+      46 |  19 |      M |  Rosendo Jayson | unemployed
+
+(15 rows)
+```
+
+
+### Hard queries
+
+**1. Get the number of users for each occupation**
+```
+cqlsh:movielens_userratings> SELECT COUNT(*), occupation FROM user GROUP BY occupation;
+InvalidRequest: Error from server: code=2200 [Invalid query] message="Group by is currently only supported on the columns of the PRIMARY KEY, got occupation"
+```
+To use GROUP BY on ``occupation``, it needs to be a PRIMARY KEY, so let's create another table with ``occupation`` as a PRIMARY KEY :
+```
+cqlsh:movielens_userratings> CREATE TABLE users_occupation (
+                         ... user_id int,
+                         ... name text,
+                         ... gender text,
+                         ... age int,
+                         ... occupation text,
+                         ... PRIMARY KEY ((occupation),user_id)
+                         ... );
+cqlsh:movielens_userratings> ALTER TABLE users_occupation WITH GC_GRACE_SECONDS = 0;
+cqlsh:movielens_userratings> COPY users_occupation(user_id,name,gender,age,occupation) FROM './users.csv' WITH HEADER = TRUE AND DELIMITER = ',';
+Using 7 child processes
+
+Starting copy of movielens_userratings.users_occupation with columns [user_id, name, gender, age, occupation].
+Processed: 6040 rows; Rate:    5328 rows/s; Avg. rate:    8717 rows/s
+6040 rows imported from 1 files in 0.693 seconds (0 skipped).
+```
+Now let's use this table for our query :
+```
+cqlsh:movielens_userratings> SELECT COUNT(*), occupation FROM users_occupation GROUP BY occupation;
+
+ count | occupation
+-------+----------------------
+   502 |  technician/engineer
+   142 |              retired
+    70 |  tradesman/craftsman
+    92 |            homemaker
+   679 | executive/managerial
+   759 | college/grad student
+   302 |      sales/marketing
+   528 |    academic/educator
+   112 |     customer service
+   711 |                other
+   144 |            scientist
+   388 |           programmer
+   129 |               lawyer
+    72 |           unemployed
+   281 |               writer
+   236 |   doctor/health care
+   173 |        clerical/admi
+   241 |        self-employed
+    17 |               farmer
+   267 |               artist
+   195 |         K-12 student
+
+(21 rows)
+
+Warnings :
+Aggregation query used without partition key
